@@ -1,0 +1,112 @@
+// This Pine Script™ is subject to the terms of the Mozilla Public License 2.0
+// © SuperTrend Flip + EMA 9/20 Alignment (Reversal Catcher)
+
+//@version=5
+strategy("V3: ST Flip + EMA 9/20 Align (Reversal)", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=1, initial_capital=100000, currency=currency.INR)
+
+// ─── Inputs ──────────────────────────────────────────
+emaFast      = input.int(9, "EMA Fast Period", minval=1)
+emaSlow      = input.int(20, "EMA Slow Period", minval=1)
+stPeriod     = input.int(10, "SuperTrend ATR Period", minval=1)
+stMultiplier = input.float(3.0, "SuperTrend Multiplier", step=0.1)
+tgtAtrMult   = input.float(2.0, "Target ATR Multiplier", step=0.1)
+slBuffer     = input.float(0.5, "SL Buffer (ATR fraction)", step=0.1)
+minRR        = input.float(1.5, "Minimum Reward:Risk Ratio", step=0.1)
+noTradeHour  = input.int(14, "No New Trade After Hour")
+noTradeMin   = input.int(45, "No New Trade After Minute")
+exitHour     = input.int(15, "Force Exit Hour")
+exitMin      = input.int(15, "Force Exit Minute")
+
+// ─── Indicators ──────────────────────────────────────
+ema9  = ta.ema(close, emaFast)
+ema20 = ta.ema(close, emaSlow)
+atr14 = ta.atr(14)
+
+[stLine, stDir] = ta.supertrend(stMultiplier, stPeriod)
+stBullish = stDir < 0
+stBearish = stDir > 0
+
+// ─── SuperTrend Flip Detection ──────────────────────
+stFlipBullish = stBullish and not stBullish[1]  // was bearish, now bullish
+stFlipBearish = stBearish and not stBearish[1]  // was bullish, now bearish
+
+// ─── Time Filter ─────────────────────────────────────
+currentTime   = hour * 100 + minute
+noTradeTime   = noTradeHour * 100 + noTradeMin
+exitTime      = exitHour * 100 + exitMin
+inTradeWindow = currentTime >= 920 and currentTime <= noTradeTime
+isExitTime    = currentTime >= exitTime
+
+// ─── Signal Conditions ──────────────────────────────
+// V3: Enter on SuperTrend flip, confirmed by EMA alignment
+
+// BUY: ST flips bullish + EMA9 > EMA20 + Close above both EMAs
+buySignal = stFlipBullish and ema9 > ema20 and close > ema9 and close > ema20 and inTradeWindow
+
+// SELL: ST flips bearish + EMA9 < EMA20 + Close below both EMAs
+sellSignal = stFlipBearish and ema9 < ema20 and close < ema9 and close < ema20 and inTradeWindow
+
+// ─── Entry Logic ─────────────────────────────────────
+if buySignal
+    sl = stLine - slBuffer * atr14  // below SuperTrend level
+    target = close + tgtAtrMult * atr14
+
+    risk = close - sl
+    if risk > 0 and target < close + minRR * risk
+        target := close + minRR * risk
+
+    strategy.entry("BUY", strategy.long)
+    strategy.exit("BUY_EXIT", "BUY", stop=sl, limit=target)
+
+if sellSignal
+    sl = stLine + slBuffer * atr14  // above SuperTrend level
+    target = close - tgtAtrMult * atr14
+
+    risk = sl - close
+    if risk > 0 and target > close - minRR * risk
+        target := close - minRR * risk
+
+    strategy.entry("SELL", strategy.short)
+    strategy.exit("SELL_EXIT", "SELL", stop=sl, limit=target)
+
+// ─── Force Exit at Session End ───────────────────────
+if isExitTime
+    strategy.close_all("Session End")
+
+// ─── Plots ───────────────────────────────────────────
+plot(ema9, "EMA 9", color=color.new(color.blue, 0), linewidth=2)
+plot(ema20, "EMA 20", color=color.new(color.orange, 0), linewidth=2)
+plot(stLine, "SuperTrend", color=stBullish ? color.green : color.red, linewidth=3, style=plot.style_linebr)
+
+// SuperTrend flip markers (big — these are the primary signals)
+plotshape(buySignal, "BUY (ST Flip)", shape.labelup, location.belowbar, color.new(color.green, 0), text="FLIP\nBUY", textcolor=color.white, size=size.normal)
+plotshape(sellSignal, "SELL (ST Flip)", shape.labeldown, location.abovebar, color.new(color.red, 0), text="FLIP\nSELL", textcolor=color.white, size=size.normal)
+
+// Mark all ST flips (even without EMA confirmation) as small dots
+plotshape(stFlipBullish and not buySignal, "ST Flip Up (no confirm)", shape.circle, location.belowbar, color.new(color.green, 60), size=size.tiny)
+plotshape(stFlipBearish and not sellSignal, "ST Flip Down (no confirm)", shape.circle, location.abovebar, color.new(color.red, 60), size=size.tiny)
+
+// Background when all conditions aligned
+bgcolor(ema9 > ema20 and stBullish ? color.new(color.green, 93) : ema9 < ema20 and stBearish ? color.new(color.red, 93) : na)
+
+// ─── Info Table ──────────────────────────────────────
+var table infoTable = table.new(position.top_right, 2, 4, bgcolor=color.new(color.black, 80), frame_width=1)
+if barstate.islast
+    stStatus = stBullish ? "BULLISH" : "BEARISH"
+    emaStatus = ema9 > ema20 ? "9 > 20" : "9 < 20"
+    aligned = (ema9 > ema20 and stBullish) or (ema9 < ema20 and stBearish) ? "YES" : "NO"
+
+    table.cell(infoTable, 0, 0, "SuperTrend", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 0, stStatus, text_color=stBullish ? color.green : color.red, text_size=size.small)
+    table.cell(infoTable, 0, 1, "EMA Trend", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 1, emaStatus, text_color=ema9 > ema20 ? color.green : color.red, text_size=size.small)
+    table.cell(infoTable, 0, 2, "Aligned", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 2, aligned, text_color=aligned == "YES" ? color.green : color.orange, text_size=size.small)
+    table.cell(infoTable, 0, 3, "ATR", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 3, str.tostring(atr14, "#.##"), text_color=color.white, text_size=size.small)
+
+// ─── Alert Conditions ────────────────────────────────
+alertcondition(buySignal, title="V3 BUY (ST Flip)", message="V3 REVERSAL: BUY — SuperTrend flipped bullish, EMA 9 > 20, price above both")
+alertcondition(sellSignal, title="V3 SELL (ST Flip)", message="V3 REVERSAL: SELL — SuperTrend flipped bearish, EMA 9 < 20, price below both")
+alertcondition(stFlipBullish, title="ST Flip Bullish", message="SuperTrend flipped to BULLISH (no EMA confirm required)")
+alertcondition(stFlipBearish, title="ST Flip Bearish", message="SuperTrend flipped to BEARISH (no EMA confirm required)")

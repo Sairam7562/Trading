@@ -1,0 +1,114 @@
+// This Pine Script™ is subject to the terms of the Mozilla Public License 2.0
+// © EMA9/20 + SuperTrend Risk Adjuster Strategy
+
+//@version=5
+strategy("V2: EMA 9/20 Cross + ST Risk Adjust", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=1, initial_capital=100000, currency=currency.INR)
+
+// ─── Inputs ──────────────────────────────────────────
+emaFast      = input.int(9, "EMA Fast Period", minval=1)
+emaSlow      = input.int(20, "EMA Slow Period", minval=1)
+stPeriod     = input.int(10, "SuperTrend ATR Period", minval=1)
+stMultiplier = input.float(3.0, "SuperTrend Multiplier", step=0.1)
+
+// Risk parameters when ST agrees
+slAligned    = input.float(1.0, "SL ATR Mult (ST Aligned)", step=0.1)
+tgtAligned   = input.float(2.5, "Target ATR Mult (ST Aligned)", step=0.1)
+
+// Risk parameters when ST disagrees
+slContrary   = input.float(2.0, "SL ATR Mult (ST Contrary)", step=0.1)
+tgtContrary  = input.float(1.5, "Target ATR Mult (ST Contrary)", step=0.1)
+
+minRR        = input.float(1.2, "Minimum Reward:Risk Ratio", step=0.1)
+noTradeHour  = input.int(14, "No New Trade After Hour")
+noTradeMin   = input.int(45, "No New Trade After Minute")
+exitHour     = input.int(15, "Force Exit Hour")
+exitMin      = input.int(15, "Force Exit Minute")
+
+// ─── Indicators ──────────────────────────────────────
+ema9  = ta.ema(close, emaFast)
+ema20 = ta.ema(close, emaSlow)
+atr14 = ta.atr(14)
+
+[stLine, stDir] = ta.supertrend(stMultiplier, stPeriod)
+stBullish = stDir < 0  // ta.supertrend: dir < 0 = bullish
+stBearish = stDir > 0
+
+// ─── EMA Crossover Detection ────────────────────────
+emaCrossUp   = ta.crossover(ema9, ema20)
+emaCrossDown = ta.crossunder(ema9, ema20)
+
+// ─── Time Filter ─────────────────────────────────────
+currentTime   = hour * 100 + minute
+noTradeTime   = noTradeHour * 100 + noTradeMin
+exitTime      = exitHour * 100 + exitMin
+inTradeWindow = currentTime >= 920 and currentTime <= noTradeTime
+isExitTime    = currentTime >= exitTime
+
+// ─── Signal Conditions ──────────────────────────────
+// V2: Trade on EVERY EMA crossover, adjust risk by SuperTrend
+buySignal  = emaCrossUp and close > ema20 and inTradeWindow
+sellSignal = emaCrossDown and close < ema20 and inTradeWindow
+
+// ─── Entry Logic ─────────────────────────────────────
+if buySignal
+    slMult  = stBullish ? slAligned : slContrary
+    tgtMult = stBullish ? tgtAligned : tgtContrary
+    sl = close - slMult * atr14
+    target = close + tgtMult * atr14
+
+    risk = close - sl
+    if risk > 0 and (target - close) < minRR * risk
+        target := close + minRR * risk
+
+    strategy.entry("BUY", strategy.long)
+    strategy.exit("BUY_EXIT", "BUY", stop=sl, limit=target)
+
+if sellSignal
+    slMult  = stBearish ? slAligned : slContrary
+    tgtMult = stBearish ? tgtAligned : tgtContrary
+    sl = close + slMult * atr14
+    target = close - tgtMult * atr14
+
+    risk = sl - close
+    if risk > 0 and (close - target) < minRR * risk
+        target := close - minRR * risk
+
+    strategy.entry("SELL", strategy.short)
+    strategy.exit("SELL_EXIT", "SELL", stop=sl, limit=target)
+
+// ─── Force Exit at Session End ───────────────────────
+if isExitTime
+    strategy.close_all("Session End")
+
+// ─── Plots ───────────────────────────────────────────
+plot(ema9, "EMA 9", color=color.new(color.blue, 0), linewidth=2)
+plot(ema20, "EMA 20", color=color.new(color.orange, 0), linewidth=2)
+plot(stLine, "SuperTrend", color=stBullish ? color.green : color.red, linewidth=2, style=plot.style_linebr)
+
+// Signal markers with risk mode
+plotshape(buySignal and stBullish, "BUY (Aligned)", shape.triangleup, location.belowbar, color.new(color.green, 0), size=size.normal)
+plotshape(buySignal and stBearish, "BUY (Contrary)", shape.triangleup, location.belowbar, color.new(color.yellow, 0), size=size.small)
+plotshape(sellSignal and stBearish, "SELL (Aligned)", shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.normal)
+plotshape(sellSignal and stBullish, "SELL (Contrary)", shape.triangledown, location.abovebar, color.new(color.yellow, 0), size=size.small)
+
+// Background: green when both align bullish, red when both align bearish
+bgcolor(ema9 > ema20 and stBullish ? color.new(color.green, 93) : ema9 < ema20 and stBearish ? color.new(color.red, 93) : na)
+
+// ─── Info Table ──────────────────────────────────────
+var table infoTable = table.new(position.top_right, 2, 3, bgcolor=color.new(color.black, 80), frame_width=1)
+if barstate.islast
+    stStatus = stBullish ? "BULLISH" : "BEARISH"
+    emaStatus = ema9 > ema20 ? "BULLISH" : "BEARISH"
+    riskMode = (ema9 > ema20 and stBullish) or (ema9 < ema20 and stBearish) ? "ALIGNED" : "CONTRARY"
+    table.cell(infoTable, 0, 0, "SuperTrend", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 0, stStatus, text_color=stBullish ? color.green : color.red, text_size=size.small)
+    table.cell(infoTable, 0, 1, "EMA Trend", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 1, emaStatus, text_color=ema9 > ema20 ? color.green : color.red, text_size=size.small)
+    table.cell(infoTable, 0, 2, "Risk Mode", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 2, riskMode, text_color=riskMode == "ALIGNED" ? color.green : color.orange, text_size=size.small)
+
+// ─── Alert Conditions ────────────────────────────────
+alertcondition(buySignal and stBullish, title="V2 BUY (Aligned)", message="V2: BUY — EMA crossover up, ST aligned (tight SL, wide target)")
+alertcondition(buySignal and stBearish, title="V2 BUY (Contrary)", message="V2: BUY — EMA crossover up, ST contrary (wider SL, modest target)")
+alertcondition(sellSignal and stBearish, title="V2 SELL (Aligned)", message="V2: SELL — EMA crossover down, ST aligned (tight SL, wide target)")
+alertcondition(sellSignal and stBullish, title="V2 SELL (Contrary)", message="V2: SELL — EMA crossover down, ST contrary (wider SL, modest target)")

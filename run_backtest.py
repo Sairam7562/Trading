@@ -11,6 +11,8 @@ Usage:
     python run_backtest.py --synthetic      # Force synthetic data
     python run_backtest.py --symbol NIFTY   # Single symbol only
     python run_backtest.py --optimize       # Run parameter optimization
+    python run_backtest.py --csv data/NSE_NIFTY,\ 5_b405d.csv  # Use CSV file
+    python run_backtest.py --ema-only       # Run only EMA 9/20 + ST variants
 """
 
 import argparse
@@ -26,6 +28,9 @@ from utils.indicators import compute_all_indicators
 from strategies.strategy_ema_cpr_rsi import StrategyEmaCprRsi
 from strategies.strategy_ema_vwap_supertrend import StrategyEmaVwapSupertrend
 from strategies.strategy_cpr_vwap_ema_crossover import StrategyCprVwapEmaCrossover
+from strategies.strategy_ema9_20_st_classic import StrategyEma920StClassic
+from strategies.strategy_ema9_20_st_risk import StrategyEma920StRisk
+from strategies.strategy_ema9_20_st_reversal import StrategyEma920StReversal
 from backtest.engine import run_backtest
 from backtest.optimizer import optimize_atr_params, print_optimization_results
 from reports.report import (
@@ -36,17 +41,25 @@ from reports.report import (
 )
 
 
-def get_all_strategies():
+def get_all_strategies(ema_only=False):
     """Return all strategy instances to backtest."""
+    ema_strategies = [
+        StrategyEma920StClassic(),
+        StrategyEma920StRisk(),
+        StrategyEma920StReversal(),
+    ]
+    if ema_only:
+        return ema_strategies
+
     return [
         StrategyEmaCprRsi(),
         StrategyEmaVwapSupertrend(),
         StrategyCprVwapEmaCrossover(cpr_width_threshold=0.3),  # Conservative
         StrategyCprVwapEmaCrossover(cpr_width_threshold=0.5),  # Aggressive
-    ]
+    ] + ema_strategies
 
 
-def run_optimization(symbols, use_synthetic):
+def run_optimization(symbols, use_synthetic, csv_path=None):
     """Run parameter optimization for each strategy on each symbol."""
     print(f"\n{'#'*70}")
     print("  PARAMETER OPTIMIZATION")
@@ -57,6 +70,9 @@ def run_optimization(symbols, use_synthetic):
         (StrategyEmaVwapSupertrend, {}, "EMA + VWAP + SuperTrend"),
         (StrategyCprVwapEmaCrossover, {"cpr_width_threshold": 0.3}, "CPR+VWAP+EMA (0.3%)"),
         (StrategyCprVwapEmaCrossover, {"cpr_width_threshold": 0.5}, "CPR+VWAP+EMA (0.5%)"),
+        (StrategyEma920StClassic, {}, "V1: EMA9/20 + ST Classic"),
+        (StrategyEma920StRisk, {}, "V2: EMA9/20 + ST Risk Adj"),
+        (StrategyEma920StReversal, {}, "V3: ST Flip + EMA Align"),
     ]
 
     best_overall = None
@@ -66,7 +82,7 @@ def run_optimization(symbols, use_synthetic):
     best_overall_symbol = ""
 
     for symbol_key in symbols:
-        df = load_data(symbol_key, use_synthetic=use_synthetic)
+        df = load_data(symbol_key, use_synthetic=use_synthetic, csv_path=csv_path)
         df_ind = compute_all_indicators(df)
 
         for cls, kwargs, name in strategy_configs:
@@ -99,10 +115,12 @@ def main():
     parser.add_argument("--synthetic", action="store_true", help="Force synthetic data")
     parser.add_argument("--symbol", type=str, default=None, help="Run for single symbol (NIFTY or BANKNIFTY)")
     parser.add_argument("--optimize", action="store_true", help="Run parameter optimization")
+    parser.add_argument("--csv", type=str, default=None, help="Path to TradingView CSV file (e.g. data/NSE_NIFTY.csv)")
+    parser.add_argument("--ema-only", action="store_true", help="Run only EMA 9/20 + SuperTrend variants")
     args = parser.parse_args()
 
-    symbols = [args.symbol] if args.symbol else list(config.SYMBOLS.keys())
-    strategies = get_all_strategies()
+    symbols = [args.symbol or "NIFTY"] if (args.symbol or args.csv) else list(config.SYMBOLS.keys())
+    strategies = get_all_strategies(ema_only=args.ema_only)
 
     print("=" * 70)
     print("  INTRADAY TRADING STRATEGY BACKTESTER")
@@ -120,7 +138,7 @@ def main():
         print(f"{'─'*70}")
 
         # 1. Load data
-        df = load_data(symbol_key, use_synthetic=args.synthetic)
+        df = load_data(symbol_key, use_synthetic=args.synthetic, csv_path=args.csv)
         print(f"  [DATA] Loaded {len(df)} candles")
 
         # 2. Compute indicators
@@ -157,7 +175,7 @@ def main():
 
     # ── Optimization ──
     if args.optimize:
-        run_optimization(symbols, args.synthetic)
+        run_optimization(symbols, args.synthetic, csv_path=args.csv)
 
     print(f"\n{'='*70}")
     print("  Backtest complete.")
