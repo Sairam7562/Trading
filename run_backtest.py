@@ -35,6 +35,7 @@ from backtest.engine import run_backtest
 from backtest.optimizer import optimize_atr_params, print_optimization_results
 from reports.report import (
     print_strategy_report,
+    print_detailed_trade_analysis,
     print_comparison_table,
     rank_strategies,
     print_best_strategy_summary,
@@ -164,6 +165,10 @@ def main():
 
             # Print individual report
             print_strategy_report(result)
+
+            # Print detailed trade analysis for EMA 9/20 strategies
+            if "EMA9/20" in strategy.name or "EMA Align" in strategy.name:
+                print_detailed_trade_analysis(result)
 
     # ── Comparison & Ranking ──
     if all_results:
