@@ -20,9 +20,10 @@ def ema(series: pd.Series, period: int) -> pd.Series:
 
 
 def add_emas(df: pd.DataFrame) -> pd.DataFrame:
-    """Add EMA 9, 21, 50 to the dataframe."""
+    """Add EMA 9, 20, 21, 50 to the dataframe."""
     df = df.copy()
     df["EMA_9"] = ema(df["Close"], config.EMA_FAST)
+    df["EMA_20"] = ema(df["Close"], config.EMA_20)
     df["EMA_21"] = ema(df["Close"], config.EMA_MID)
     df["EMA_50"] = ema(df["Close"], config.EMA_SLOW)
     return df

@@ -25,6 +25,7 @@ SLIPPAGE_POINTS = 2            # assumed slippage in index points
 
 # ─── Indicator Defaults ───────────────────────────────────
 EMA_FAST = 9
+EMA_20 = 20
 EMA_MID = 21
 EMA_SLOW = 50
 RSI_PERIOD = 14
