@@ -172,12 +172,67 @@ def generate_synthetic_data(symbol_key: str, days: int = 50) -> pd.DataFrame:
     return df
 
 
-def load_data(symbol_key: str, use_synthetic: bool = False) -> pd.DataFrame:
+def load_csv(csv_path: str) -> pd.DataFrame:
     """
-    Load 5-min data for the given symbol. Tries yfinance first,
-    falls back to synthetic if unavailable.
+    Load OHLCV data from a TradingView-exported CSV file.
+    Expected columns: time, open, high, low, close, Volume
+    (case-insensitive matching).
     """
-    if use_synthetic:
+    import os
+    if not os.path.isfile(csv_path):
+        raise FileNotFoundError(f"CSV file not found: {csv_path}")
+
+    df = pd.read_csv(csv_path)
+
+    # Normalize column names to title case
+    col_map = {}
+    for c in df.columns:
+        cl = c.strip().lower()
+        if cl in ("time", "datetime", "date"):
+            col_map[c] = "Datetime"
+        elif cl == "open":
+            col_map[c] = "Open"
+        elif cl == "high":
+            col_map[c] = "High"
+        elif cl == "low":
+            col_map[c] = "Low"
+        elif cl == "close":
+            col_map[c] = "Close"
+        elif cl == "volume":
+            col_map[c] = "Volume"
+    df.rename(columns=col_map, inplace=True)
+
+    required = ["Datetime", "Open", "High", "Low", "Close"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"CSV missing required columns: {missing}. Found: {list(df.columns)}")
+
+    df["Datetime"] = pd.to_datetime(df["Datetime"])
+    df.set_index("Datetime", inplace=True)
+    df.sort_index(inplace=True)
+
+    # Ensure Volume column exists
+    if "Volume" not in df.columns:
+        df["Volume"] = 0
+
+    df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
+
+    # Filter market hours
+    df = _filter_market_hours(df)
+
+    print(f"  [DATA] Loaded {len(df)} candles from CSV: {csv_path}")
+    return df
+
+
+def load_data(symbol_key: str, use_synthetic: bool = False, csv_path: str = None) -> pd.DataFrame:
+    """
+    Load 5-min data for the given symbol.
+    Priority: csv_path > yfinance > synthetic.
+    """
+    if csv_path:
+        print(f"  [DATA] Loading from CSV: {csv_path}...")
+        df = load_csv(csv_path)
+    elif use_synthetic:
         print(f"  [DATA] Generating synthetic data for {symbol_key}...")
         df = generate_synthetic_data(symbol_key)
     else:
