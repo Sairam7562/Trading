@@ -176,21 +176,33 @@ def add_supertrend(df: pd.DataFrame, period: int = None, multiplier: float = Non
     supertrend = pd.Series(index=df.index, dtype=float)
     direction = pd.Series(index=df.index, dtype=float)
 
-    supertrend.iloc[0] = upper_band.iloc[0]
-    direction.iloc[0] = -1
+    # Find the first row with valid ATR to start computation
+    first_valid = atr.first_valid_index()
+    if first_valid is None:
+        df["SuperTrend"] = np.nan
+        df["ST_Direction"] = np.nan
+        return df
 
-    for i in range(1, len(df)):
+    start_idx = df.index.get_loc(first_valid)
+    supertrend.iloc[start_idx] = upper_band.iloc[start_idx]
+    direction.iloc[start_idx] = -1
+
+    for i in range(start_idx + 1, len(df)):
+        # Skip if current bands are NaN
+        if pd.isna(lower_band.iloc[i]) or pd.isna(upper_band.iloc[i]):
+            continue
+
         # Lower band logic
-        if lower_band.iloc[i] > lower_band.iloc[i - 1] or df["Close"].iloc[i - 1] < lower_band.iloc[i - 1]:
-            pass  # keep current lower_band
-        else:
-            lower_band.iloc[i] = lower_band.iloc[i - 1]
+        prev_lb = lower_band.iloc[i - 1]
+        if not pd.isna(prev_lb):
+            if not (lower_band.iloc[i] > prev_lb or df["Close"].iloc[i - 1] < prev_lb):
+                lower_band.iloc[i] = prev_lb
 
         # Upper band logic
-        if upper_band.iloc[i] < upper_band.iloc[i - 1] or df["Close"].iloc[i - 1] > upper_band.iloc[i - 1]:
-            pass  # keep current upper_band
-        else:
-            upper_band.iloc[i] = upper_band.iloc[i - 1]
+        prev_ub = upper_band.iloc[i - 1]
+        if not pd.isna(prev_ub):
+            if not (upper_band.iloc[i] < prev_ub or df["Close"].iloc[i - 1] > prev_ub):
+                upper_band.iloc[i] = prev_ub
 
         # Direction
         if supertrend.iloc[i - 1] == upper_band.iloc[i - 1]:
