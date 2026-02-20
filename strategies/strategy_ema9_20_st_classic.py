@@ -16,14 +16,14 @@ LOGIC:
     - Close is below EMA 20
     - Candle closes below SuperTrend level
 
-  SL: SuperTrend level (natural support/resistance)
-  Target: 2x ATR from entry (minimum 1:1.5 RR)
+  SL: Fixed 40 points from entry
+  Target: Fixed 120 points from entry (1:3 RR)
 
   WHY THIS WORKS:
     - Dual confirmation eliminates most false crossover signals
     - SuperTrend acts as a macro trend filter
-    - Fewer trades but higher win rate
-    - Best in trending markets, avoids choppy range-bound days
+    - Fixed SL/Target removes ATR variability — consistent risk per trade
+    - 1:3 RR means you only need ~25% win rate to break even
 """
 
 import numpy as np
@@ -68,40 +68,37 @@ class StrategyEma920StClassic(BaseStrategy):
             ema_cross_up = (ema9 > ema20) and (prev_ema9 <= prev_ema20)
             ema_cross_down = (ema9 < ema20) and (prev_ema9 >= prev_ema20)
 
+            # Fixed SL/Target in points
+            SL_POINTS = 40
+            TARGET_POINTS = 120
+
             # ── BUY: Crossover UP + SuperTrend Bullish ──
             if ema_cross_up and st_dir == 1 and close > ema20 and close > st:
-                sl = max(st, close - config.SL_ATR_MULTIPLIER * atr)
-                target = close + config.TARGET_ATR_MULTIPLIER * atr
-
-                # Ensure minimum 1:1.5 RR
-                risk = close - sl
-                if risk > 0 and target < close + 1.5 * risk:
-                    target = close + 1.5 * risk
+                sl = close - SL_POINTS
+                target = close + TARGET_POINTS
 
                 df.iloc[i, df.columns.get_loc("Signal")] = "BUY"
                 df.iloc[i, df.columns.get_loc("SL")] = round(sl, 2)
                 df.iloc[i, df.columns.get_loc("Target")] = round(target, 2)
                 df.iloc[i, df.columns.get_loc("Reason")] = (
                     f"BUY: EMA9({ema9:.0f}) crossed above EMA20({ema20:.0f}), "
-                    f"ST bullish, Close({close:.0f})>ST({st:.0f})"
+                    f"ST bullish, Close({close:.0f})>ST({st:.0f}), "
+                    f"SL={sl:.0f}(-40), TGT={target:.0f}(+120)"
                 )
                 continue
 
             # ── SELL: Crossover DOWN + SuperTrend Bearish ──
             if ema_cross_down and st_dir == -1 and close < ema20 and close < st:
-                sl = min(st, close + config.SL_ATR_MULTIPLIER * atr)
-                target = close - config.TARGET_ATR_MULTIPLIER * atr
-
-                risk = sl - close
-                if risk > 0 and target > close - 1.5 * risk:
-                    target = close - 1.5 * risk
+                sl = close + SL_POINTS
+                target = close - TARGET_POINTS
 
                 df.iloc[i, df.columns.get_loc("Signal")] = "SELL"
                 df.iloc[i, df.columns.get_loc("SL")] = round(sl, 2)
                 df.iloc[i, df.columns.get_loc("Target")] = round(target, 2)
                 df.iloc[i, df.columns.get_loc("Reason")] = (
                     f"SELL: EMA9({ema9:.0f}) crossed below EMA20({ema20:.0f}), "
-                    f"ST bearish, Close({close:.0f})<ST({st:.0f})"
+                    f"ST bearish, Close({close:.0f})<ST({st:.0f}), "
+                    f"SL={sl:.0f}(+40), TGT={target:.0f}(-120)"
                 )
 
         return df

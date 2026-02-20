@@ -207,9 +207,9 @@ def print_detailed_trade_analysis(result: BacktestResult):
     # ── EXIT RULES ──
     print(f"\n  EXIT RULES (How & When Trades Close):")
     print(f"  {'─'*50}")
-    print(f"  1. TARGET HIT  — Price reaches 2.0x ATR from entry (profit booking)")
-    print(f"  2. SL HIT      — Price hits stop-loss (SuperTrend level or 1.5x ATR)")
-    print(f"  3. TRAILING SL — SL moves up with price (1.0x ATR trail), locks profit")
+    print(f"  1. TARGET HIT  — Price moves 120 pts in your favor (profit booking)")
+    print(f"  2. SL HIT      — Price moves 40 pts against you (stop-loss)")
+    print(f"  3. TRAILING SL — SL trails with price (1.0x ATR), locks profit if moved")
     print(f"  4. TIME EXIT   — All positions squared off at 15:15 (end of day)")
     print(f"  5. OPPOSITE SIGNAL — New signal in opposite direction closes current trade")
 
